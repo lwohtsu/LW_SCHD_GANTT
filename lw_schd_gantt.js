@@ -63,7 +63,7 @@ function myFunction() {
     if (a.project > b.project) return 1;
     return 0;
   });
-  Logger.log(records);
+//  Logger.log(records);
   for(var i=0; i<4; i++){
     var m = new Date(today.getFullYear(), today.getMonth()+i, 1);
     svgtext = createGANTTbyAssign(records, m);
