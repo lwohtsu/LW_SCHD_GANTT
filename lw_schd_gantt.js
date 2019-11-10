@@ -50,7 +50,7 @@ function myFunction() {
   }
   // ガントチャート生成
   var ganttfolder = workfolder.getFoldersByName('GANTT').next();
-  for(var i=0; i<4; i++){
+  for(var i=0; i<6; i++){
     var m = new Date(today.getFullYear(), today.getMonth()+i, 1);
     svgtext = createGANTT(records, m);
     overwriteFile(ganttfolder, 'GANTT_' + m.getFullYear() +'_'+ ('0' + (m.getMonth()+1)).slice(-2) + '.svg', svgtext, 'image/svg+xml');
@@ -64,7 +64,7 @@ function myFunction() {
     return 0;
   });
 //  Logger.log(records);
-  for(var i=0; i<4; i++){
+  for(var i=0; i<6; i++){
     var m = new Date(today.getFullYear(), today.getMonth()+i, 1);
     svgtext = createGANTTbyAssign(records, m);
     overwriteFile(ganttfolder, 'ASSIGN_' + m.getFullYear() +'_'+ ('0' + (m.getMonth()+1)).slice(-2) + '.svg', svgtext, 'image/svg+xml');
