@@ -37,11 +37,11 @@ function myFunction() {
           var members = member.split(',');
           for(var m = 0; m < members.length; m++){
             records.push({
-              'project': fname.slice(5),
-              'task': task,
+              'project': escapeHtml(fname.slice(5)),
+              'task': escapeHtml(task),
               'start': start, 
               'end': end,
-              'member': members[m]
+              'member': escapeHtml(members[m])
             });
           }
         }
@@ -303,4 +303,14 @@ function overwriteFile(workfolder, name, content, mimetype){
     workfolder.removeFile(files.next());
   }
   workfolder.createFile(name, content, mimetype);  
+}
+
+// エスケープ処理
+function escapeHtml(unsafe) {
+  return unsafe
+  .replace(/&/g, "&amp;")
+  .replace(/</g, "&lt;")
+  .replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;")
+  .replace(/'/g, "&#039;");
 }
