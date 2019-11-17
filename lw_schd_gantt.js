@@ -9,14 +9,15 @@ function myFunction() {
   Logger.log(today);
 
   // データ抽出
-  var records = [];  
+  var records = [];
   while (files.hasNext()) {
     var file = files.next();
     // ファイルがスプレッドシートか確認
     if(file.getMimeType() === 'application/vnd.google-apps.spreadsheet'){
 //      Logger.log(file.getName());
       var fname = file.getName();
-      
+      var fileurl = file.getUrl();
+
       var spreadsheet = SpreadsheetApp.open(file);
       var sheet = spreadsheet.getSheetByName('スケジュール');
       if(sheet != null){
@@ -39,15 +40,18 @@ function myFunction() {
             records.push({
               'project': escapeHtml(fname.slice(5)),
               'task': escapeHtml(task),
-              'start': start, 
+              'start': start,
               'end': end,
-              'member': escapeHtml(members[m])
+              'member': escapeHtml(members[m]),
+              'url': fileurl
             });
           }
         }
       }
     }
   }
+//  Logger.log(records);
+
   // ガントチャート生成
   var ganttfolder = workfolder.getFoldersByName('GANTT').next();
   for(var i=0; i<6; i++){
@@ -56,9 +60,23 @@ function myFunction() {
     overwriteFile(ganttfolder, 'GANTT_' + m.getFullYear() +'_'+ ('0' + (m.getMonth()+1)).slice(-2) + '.svg', svgtext, 'image/svg+xml');
   }
   // 担当者別ガントチャート生成
+  var sortlist = { '小山': 0, '大津':1, '未定':9999 };  
   records.sort(function(a,b){
-    if (a.member < b.member) return -1;
-    if (a.member > b.member) return 1;
+    var idxa = sortlist[a.member];
+    var idxb = sortlist[b.member];
+    if(idxa == undefined && idxb == undefined){
+      if (a.member < b.member) return -1;
+      if (a.member > b.member) return 1;
+    } else if(idxa == undefined && idxb != undefined){
+      return 1;
+    } else if(idxa != undefined && idxb == undefined){
+      return -1;
+    } else {
+      if (idxa < idxb) return -1;
+      if (idxa > idxb) return 1;
+    }
+//    if (a_member < b_member) return -1;
+//    if (a_member > b_member) return 1;
     if (a.project < b.project) return -1;
     if (a.project > b.project) return 1;
     return 0;
@@ -80,40 +98,41 @@ function createGANTT(records, startdate){
   // 各種データの用意
   var svgtext = '';
   var ONEDAY = 20;  //1日を20pxとする
-  svgtext += '<text x="0" y="16" font-size="16" fill="black">' 
+  svgtext += '<text x="0" y="16" font-size="16" fill="black">'
   + startdate.getFullYear()  + '/' + parseInt(startdate.getMonth()+1) + '</text>';
   // 現在のプロジェクト
   var curproject = '';
   //現在の基準位置
   var by = 0;
   var bx = 160;
-  var bheight = 50;
+  var bheight = 30;
   // タスクの重なりを防止する
-  var overmap = [];  
-  
-  // 日付ラベル
-  for(var x=1; x<=enddate.getDate(); x++){
-      svgtext += '<rect x="' + (bx+parseInt(x*ONEDAY)) + '" y="' + (by+20) 
-      + '" width="' + ONEDAY + '" height="1000" stroke="cyan" fill="none"/>';    
-      svgtext += '<text x="' + (bx+parseInt(x*ONEDAY)) + '" y="' + (by+34) + '" font-size="10" fill="black">' + x + '</text>';
-  }
+  var overmap = [];
+
+  by = 30;
 
   // ループで全レコードを処理
   for(var r=0; r<records.length; r++){
-    // 終了時間がない場合はスキップ    
+    // 終了時間がない場合はスキップ
     if(records[r].end == '') continue;
     var ed = records[r].end.getDate();
     // 終了時間が期間の開始よりも前ならスキップ
     if(records[r].end < startdate) continue;
     // 開始時間が期間の終了よりも後ならスキップ
     if(records[r].start > enddate) continue;
+    // 終了時間も開始時間もendateよりあとならスキップ
+    if(records[r].end > enddate) {
+      if(records[r].start == '') continue;
+      if(records[r].start > enddate) continue;
+    }
     // プロジェクト名が変わったときにbyをずらす
     if(records[r].project != curproject){
+//      Logger.log(records[r]);
       curproject = records[r].project;
       by += bheight;
-      bheight = 50;
-      svgtext += '<text x="0" y="' + by + '" font-size="10" fill="black">' + curproject + '</text>';
-      svgtext += '<line x1="0" y1="' + (by-12) + '" x2="1200" y2="' + (by-12) + '" stroke="blue"/>' ; 
+      bheight = 30;
+      svgtext += '<a href="' + records[r].url + '" target="_blank"><text x="0" y="' + by + '" font-size="10" fill="blue">' + curproject + '</text></a>';
+      svgtext += '<line x1="0" y1="' + (by-12) + '" x2="1200" y2="' + (by-12) + '" stroke="blue"/>' ;
       overmap = [];
     }
     // 開始時間がない
@@ -134,11 +153,11 @@ function createGANTT(records, startdate){
         bheight += 11;
       }
       // 描画
-      svgtext += '<line x1="' + (bx+parseInt((ed+1)*ONEDAY)) + '" y1="' + (by-12) 
-      + '" x2="' + (bx+parseInt((ed+1)*ONEDAY)) + '" y2="' + (by+28) + '" stroke="red"/>';    
-      svgtext += '<line x1="' + (bx+parseInt(ed*ONEDAY)) + '" y1="' + (by+8) 
-      + '" x2="' + (bx+parseInt((ed+1)*ONEDAY)) + '" y2="' + (by+8) + '" stroke="red"/>';    
-      svgtext += '<text x="' + (bx+parseInt((ed+1)*ONEDAY)) + '" y="' + (by+yshift*11-1) + '" font-size="10" fill="black">' 
+      svgtext += '<line x1="' + (bx+parseInt((ed+1)*ONEDAY)) + '" y1="' + (by-12)
+      + '" x2="' + (bx+parseInt((ed+1)*ONEDAY)) + '" y2="' + (by+28) + '" stroke="red"/>';
+      svgtext += '<line x1="' + (bx+parseInt(ed*ONEDAY)) + '" y1="' + (by+8)
+      + '" x2="' + (bx+parseInt((ed+1)*ONEDAY)) + '" y2="' + (by+8) + '" stroke="red"/>';
+      svgtext += '<text x="' + (bx+parseInt((ed+1)*ONEDAY)) + '" y="' + (by+yshift*11-1) + '" font-size="10" fill="black">'
       + records[r].task + records[r].member + '</text>';
       overmap.push({"sd": ed, "ed": ed, "yshift": yshift});
     } else {
@@ -163,18 +182,25 @@ function createGANTT(records, startdate){
       }
       // 描画
       if(records[r].task.indexOf('_')==0){
-        svgtext += '<rect x="' + (bx+parseInt(sd*ONEDAY)) + '" y="' + (by+yshift*11-11) 
-        + '" width="' + (parseInt((ed-sd+1)*ONEDAY)) + '" height="11" stroke="red" fill="gray" fill-opacity="0.5" stroke-dasharray="2,5"/>';    
+        svgtext += '<rect x="' + (bx+parseInt(sd*ONEDAY)) + '" y="' + (by+yshift*11-11)
+        + '" width="' + (parseInt((ed-sd+1)*ONEDAY)) + '" height="11" stroke="red" fill="gray" fill-opacity="0.5" stroke-dasharray="2,5"/>';
       } else {
-        svgtext += '<rect x="' + (bx+parseInt(sd*ONEDAY)) + '" y="' + (by+yshift*11-11) 
-        + '" width="' + (parseInt((ed-sd+1)*ONEDAY)) + '" height="11" stroke="red" fill="pink" fill-opacity="0.5"/>';    
+        svgtext += '<rect x="' + (bx+parseInt(sd*ONEDAY)) + '" y="' + (by+yshift*11-11)
+        + '" width="' + (parseInt((ed-sd+1)*ONEDAY)) + '" height="11" stroke="red" fill="pink" fill-opacity="0.5"/>';
       }
-      svgtext += '<text x="' + (bx+parseInt(sd*ONEDAY)) + '" y="' + (by+yshift*11-1) + '" font-size="10" fill="black">' 
+      svgtext += '<text x="' + (bx+parseInt(sd*ONEDAY)) + '" y="' + (by+yshift*11-1) + '" font-size="10" fill="black">'
       + records[r].task + records[r].member + '</text>';
       overmap.push({"sd": sd, "ed": ed, "yshift": yshift});
     }
   }
-  svgtext = '<?xml version="1.0" encoding="utf-8"?><svg xmlns="http://www.w3.org/2000/svg" width="900" height="' + (by+60) + '">' + svgtext + '</svg>';
+  // 日付ラベル
+  for(var x=1; x<=enddate.getDate(); x++){
+      svgtext += '<rect x="' + (bx+parseInt(x*ONEDAY)) + '" y="' + 20
+      + '" width="' + ONEDAY + '" height="' +  (by + 60) + '" stroke="cyan" fill="none" stroke-opacity="30%"/>';
+      svgtext += '<text x="' + (bx+parseInt(x*ONEDAY)) + '" y="' + 34 + '" font-size="10" fill="black">' + x + '</text>';
+  }
+
+  svgtext = '<?xml version="1.0" encoding="utf-8"?><svg xmlns="http://www.w3.org/2000/svg" width="900" height="' + (by+60) + '">\n' + svgtext + '</svg>';
   return svgtext;
 }
 
@@ -185,7 +211,7 @@ function createGANTTbyAssign(records, startdate){
   // 各種データの用意
   var svgtext = '';
   var ONEDAY = 20;  //1日を20pxとする
-  svgtext += '<text x="0" y="16" font-size="16" fill="black">' 
+  svgtext += '<text x="0" y="16" font-size="16" fill="black">'
   + startdate.getFullYear()  + '/' + parseInt(startdate.getMonth()+1) + '</text>';
   // 現在の担当者
   var curproject = '';
@@ -195,19 +221,13 @@ function createGANTTbyAssign(records, startdate){
   var bx = 240;
   var bheight = 20;
   // タスクの重なりを防止する
-  var overmap = [];  
-  
-  // 日付ラベル
-  for(var x=1; x<=enddate.getDate(); x++){
-      svgtext += '<rect x="' + (bx+parseInt(x*ONEDAY)) + '" y="' + (by+20) 
-      + '" width="' + ONEDAY + '" height="1000" stroke="cyan" fill="none"/>';    
-      svgtext += '<text x="' + (bx+parseInt(x*ONEDAY)) + '" y="' + (by+34) + '" font-size="10" fill="black">' + x + '</text>';
-  }
+  var overmap = [];
+
   by = 30;
 
   // ループで全レコードを処理
   for(var r=0; r<records.length; r++){
-    // 終了時間がない場合はスキップ    
+    // 終了時間がない場合はスキップ
     if(records[r].end == '') continue;
     // 担当者未記入もスキップ
     if(records[r].member == '') continue;
@@ -216,22 +236,29 @@ function createGANTTbyAssign(records, startdate){
     if(records[r].end < startdate) continue;
     // 開始時間が期間の終了よりも後ならスキップ
     if(records[r].start > enddate) continue;
+    // 終了時間も開始時間もendateよりあとならスキップ
+    if(records[r].end > enddate) {
+      if(records[r].start == '') continue;
+      if(records[r].start > enddate) continue;
+    }
     // 担当者名かプロジェクト名が変わったときにbyをずらす
     if(records[r].member != curmember){
       curmember = records[r].member;
       curproject = records[r].project;
       by += bheight;
       bheight = 20;
-      svgtext += '<text x="0" y="' + by + '" font-size="10" fill="black">' + curmember +':' + curproject + '</text>';
-      svgtext += '<line x1="0" y1="' + (by-12) + '" x2="1200" y2="' + (by-12) + '" stroke="blue"/>' ; 
+//      svgtext += '<text x="0" y="' + by + '" font-size="10" fill="black">' + curmember +':' + curproject + '</text>';
+      svgtext += '<a href="' + records[r].url + '" target="_blank"><text x="0" y="' + by + '" font-size="10" fill="blue">' + curmember +':' + curproject + '</text></a>';
+      svgtext += '<line x1="0" y1="' + (by-12) + '" x2="1200" y2="' + (by-12) + '" stroke="blue"/>' ;
       overmap = [];
     } else if(records[r].project != curproject) {
       curproject = records[r].project;
       by += bheight;
       bheight = 20;
-      svgtext += '<text x="0" y="' + by + '" font-size="10" fill="black">' + curmember +':' + curproject + '</text>';
-      svgtext += '<line x1="20" y1="' + (by-12) + '" x2="1200" y2="' + (by-12) + '" stroke="blue" stroke-dasharray="2,5"/>' ; 
-      overmap = [];      
+//      svgtext += '<text x="0" y="' + by + '" font-size="10" fill="black">' + curmember +':' + curproject + '</text>';
+      svgtext += '<a href="' + records[r].url + '" target="_blank"><text x="0" y="' + by + '" font-size="10" fill="blue">' + curmember +':' + curproject + '</text></a>';
+      svgtext += '<line x1="20" y1="' + (by-12) + '" x2="1200" y2="' + (by-12) + '" stroke="blue" stroke-dasharray="2,5"/>' ;
+      overmap = [];
     }
     // 開始時間がない
     if(records[r].start == ''){
@@ -251,11 +278,11 @@ function createGANTTbyAssign(records, startdate){
         bheight += 11;
       }
       // 描画
-      svgtext += '<line x1="' + (bx+parseInt((ed+1)*ONEDAY)) + '" y1="' + (by-12) 
-      + '" x2="' + (bx+parseInt((ed+1)*ONEDAY)) + '" y2="' + (by) + '" stroke="red"/>';    
-      svgtext += '<line x1="' + (bx+parseInt(ed*ONEDAY)) + '" y1="' + (by-6) 
-      + '" x2="' + (bx+parseInt((ed+1)*ONEDAY)) + '" y2="' + (by-6) + '" stroke="red"/>';    
-      svgtext += '<text x="' + (bx+parseInt((ed+1)*ONEDAY)) + '" y="' + (by+yshift*11-1) + '" font-size="10" fill="black">' 
+      svgtext += '<line x1="' + (bx+parseInt((ed+1)*ONEDAY)) + '" y1="' + (by-12)
+      + '" x2="' + (bx+parseInt((ed+1)*ONEDAY)) + '" y2="' + (by) + '" stroke="red"/>';
+      svgtext += '<line x1="' + (bx+parseInt(ed*ONEDAY)) + '" y1="' + (by-6)
+      + '" x2="' + (bx+parseInt((ed+1)*ONEDAY)) + '" y2="' + (by-6) + '" stroke="red"/>';
+      svgtext += '<text x="' + (bx+parseInt((ed+1)*ONEDAY)) + '" y="' + (by+yshift*11-1) + '" font-size="10" fill="black">'
        + records[r].task + '</text>';
       overmap.push({"sd": ed, "ed": ed, "yshift": yshift});
     } else {
@@ -280,18 +307,26 @@ function createGANTTbyAssign(records, startdate){
       }
       // 描画
       if(records[r].task.indexOf('_')==0){
-        svgtext += '<rect x="' + (bx+parseInt(sd*ONEDAY)) + '" y="' + (by+yshift*11-11) 
-        + '" width="' + (parseInt((ed-sd+1)*ONEDAY)) + '" height="11" stroke="red" fill="gray" fill-opacity="0.5" stroke-dasharray="2,5"/>';    
+        svgtext += '<rect x="' + (bx+parseInt(sd*ONEDAY)) + '" y="' + (by+yshift*11-11)
+        + '" width="' + (parseInt((ed-sd+1)*ONEDAY)) + '" height="11" stroke="red" fill="gray" fill-opacity="0.5" stroke-dasharray="2,5"/>';
       } else {
-        svgtext += '<rect x="' + (bx+parseInt(sd*ONEDAY)) + '" y="' + (by+yshift*11-11) 
-        + '" width="' + (parseInt((ed-sd+1)*ONEDAY)) + '" height="11" stroke="red" fill="pink" fill-opacity="0.5"/>';    
+        svgtext += '<rect x="' + (bx+parseInt(sd*ONEDAY)) + '" y="' + (by+yshift*11-11)
+        + '" width="' + (parseInt((ed-sd+1)*ONEDAY)) + '" height="11" stroke="red" fill="pink" fill-opacity="0.5"/>';
       }
-      svgtext += '<text x="' + (bx+parseInt(sd*ONEDAY)) + '" y="' + (by+yshift*11-1) + '" font-size="10" fill="black">' 
+      svgtext += '<text x="' + (bx+parseInt(sd*ONEDAY)) + '" y="' + (by+yshift*11-1) + '" font-size="10" fill="black">'
       + records[r].task + '</text>';
       overmap.push({"sd": sd, "ed": ed, "yshift": yshift});
     }
   }
-  svgtext = '<?xml version="1.0" encoding="utf-8"?><svg xmlns="http://www.w3.org/2000/svg" width="900" height="' + (by+60) + '">' + svgtext + '</svg>';
+
+  // 日付ラベル
+  for(var x=1; x<=enddate.getDate(); x++){
+      svgtext += '<rect x="' + (bx+parseInt(x*ONEDAY)) + '" y="' + 20
+      + '" width="' + ONEDAY + '" height="' + (by + 60) + '" stroke="cyan" fill="none" stroke-opacity="30%"/>';
+      svgtext += '<text x="' + (bx+parseInt(x*ONEDAY)) + '" y="' + 34 + '" font-size="10" fill="black">' + x + '</text>';
+  }
+
+  svgtext = '<?xml version="1.0" encoding="utf-8"?><svg xmlns="http://www.w3.org/2000/svg" width="900" height="' + (by+60) + '">\n' + svgtext + '</svg>';
   return svgtext;
 }
 
@@ -302,7 +337,10 @@ function overwriteFile(workfolder, name, content, mimetype){
   if(files.hasNext()){
     workfolder.removeFile(files.next());
   }
-  workfolder.createFile(name, content, mimetype);  
+//  var bom = [0xEF, 0xBB, 0xBF];
+//  var blob = Utilities.newBlob([0xEF, 0xBB, 0xBF, content], mimetype, name);
+//  workfolder.createFile(blob);
+  workfolder.createFile(name, content, mimetype);
 }
 
 // エスケープ処理
